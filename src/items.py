@@ -6,7 +6,13 @@
 import scrapy
 
 
-class SrcItem(scrapy.Item):
+class PixivItem(scrapy.Item):
     # define the fields for your item here like:
     # name = scrapy.Field()
+    user_name = scrapy.Field()
+    user_id = scrapy.Field()
+
+    image_urls = scrapy.Field()   
+    images = scrapy.Field()       
+
     pass

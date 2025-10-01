@@ -2,6 +2,10 @@ BOT_NAME = "src"
 SPIDER_MODULES = ["src.spiders"]
 NEWSPIDER_MODULE = "src.spiders"
 
+IMAGES_STORE = "pixiv_images"
+
+IMAGES_URLS_FIELD = "image_urls"
+
 ADDONS = {}
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
@@ -28,6 +32,9 @@ DEFAULT_REQUEST_HEADERS = {
 #    "Accept-Language": "en",
     "Referer": "https://www.pixiv.net/",
 }
+
+HTTP_PROXY = 'http://127.0.0.1:7890'
+HTTPS_PROXY = 'http://127.0.0.1:7890'
 
 # Enable or disable spider middlewares
 # See https://docs.scrapy.org/en/latest/topics/spider-middleware.html
@@ -69,9 +76,9 @@ AUTOTHROTTLE_DEBUG = False
 
 # Enable and configure HTTP caching (disabled by default)
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html#httpcache-middleware-settings
-#HTTPCACHE_ENABLED = True
-#HTTPCACHE_EXPIRATION_SECS = 0
-#HTTPCACHE_DIR = "httpcache"
+HTTPCACHE_ENABLED = True
+HTTPCACHE_EXPIRATION_SECS = 0
+HTTPCACHE_DIR = "httpcache"
 #HTTPCACHE_IGNORE_HTTP_CODES = []
 #HTTPCACHE_STORAGE = "scrapy.extensions.httpcache.FilesystemCacheStorage"
 
