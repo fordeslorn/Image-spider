@@ -1,11 +1,11 @@
 # Image-spider
-Used for crawl some image site
+Used for crawling some image site
 
 ## Usage
 Create a .env file in the project root directory with environment variable below:
 ```markdown 
-PIXIV_COOKIES=   # Your pixiv account cookies
-userId=          # The author ID which you want to crawl
+PIXIV_COOKIES="xxxxxx"   # Your pixiv account cookies
+userId=xxxxxx            # The author ID which you want to crawl
 ```
 
 The project uses UV to manage the venv.
