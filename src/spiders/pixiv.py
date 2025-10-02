@@ -9,6 +9,13 @@ class PixivSpider(scrapy.Spider):
     allowed_domains = ["www.pixiv.net", "pximg.net"]
     # start_urls = ["https://www.pixiv.net"]
     user_id = os.environ.get("userId", "").strip()
+    
+    custom_settings = {  # Scrapy 内置的 Spider 类属性（一个 dict），其值会在该爬虫运行时覆盖项目级 settings
+        "IMAGES_STORE": "download_img/pixiv_images",
+        "ITEM_PIPELINES": {
+            "scrapy.pipelines.images.ImagesPipeline": 1
+        },
+    }
 
     async def start(self):
         my_cookies = os.environ.get("PIXIV_COOKIES")
@@ -64,7 +71,7 @@ class PixivSpider(scrapy.Spider):
         user_id = body.get('userId')
         user_name = body.get('userName')
         
-        if original_url and user_id and user_name:
+        if original_url:
             self.log(f"\033[32msuccessfully extracted image URL: {original_url}\033[0m")
             item = PixivItem()
 

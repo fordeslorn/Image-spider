@@ -9,7 +9,7 @@ from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 from src.spiders.pixiv import PixivSpider 
 
-def craw_data():
+def crawl_pixiv_data():
     if not os.environ.get("PIXIV_COOKIES"):
         print("\n\033[31merror: cannot find PIXIV_COOKIES in environment variables!\033[0m")
         print("\033[33mPlease ensure that the .env file is in the project root directory and the variable name is correct.\n\033[0m")
@@ -33,8 +33,8 @@ def craw_data():
     process.crawl(PixivSpider) # 告诉 process 要运行哪个爬虫
     process.start() # 脚本会在这里阻塞，直到爬虫运行结束
 
-def craw_image():
-    # 需要开启 settings.py 中的 "scrapy.pipelines.images.ImagesPipeline"管道
+def crawl_pixiv_image():
+    # 需要开启 pixiv.py 中的 "scrapy.pipelines.images.ImagesPipeline"管道
 
     if not os.environ.get("PIXIV_COOKIES"):
         print("\n\033[31merror: cannot find PIXIV_COOKIES in environment variables!\033[0m")
@@ -48,5 +48,5 @@ def craw_image():
     process.start()  
 
 if __name__ == "__main__":
-    # craw_data()
-    craw_image()
+    # crawl_pixiv_data()
+    crawl_pixiv_image()
