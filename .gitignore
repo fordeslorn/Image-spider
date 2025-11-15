@@ -208,4 +208,7 @@ __marimo__/
 
 # Other files to ignore
 pixiv.json
-download_img
+.download_imgs
+.task_data/
+.task_logs
+test_result.json

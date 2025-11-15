@@ -53,36 +53,30 @@ class ListHandler(logging.Handler):
         return self.log_lines
 
 def setup_logging(log_file: str):
-    """
-    配置日志
-    
-    返回:
-        ListHandler: 日志收集器（用于后续获取日志）
-    """
+    """配置日志"""
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
     
-    # ========== 关键修复 1：清除所有现有的处理器 ==========
-    root_logger = logging.getLogger()
+    # ========== 第 1 步：完全禁用 Scrapy 的日志系统 ==========
+    from scrapy.utils.log import configure_logging
+    configure_logging(install_root_handler=False)  # 必须在最开始调用
     
-    # 移除所有旧的处理器（防止重复）
+    # ========== 第 2 步：清除所有现有的处理器 ==========
+    root_logger = logging.getLogger()
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
     
-    root_logger.setLevel(logging.DEBUG)
+    root_logger.setLevel(logging.INFO)  # 改为 INFO，减少噪音
     
-    # 文件处理器
-    file_handler = logging.FileHandler(log_file, encoding='utf-8', mode='w')  # 注意：mode='w' 覆盖写入
-    file_handler.setLevel(logging.DEBUG)
+    # ========== 第 3 步：创建处理器 ==========
+    file_handler = logging.FileHandler(log_file, encoding='utf-8', mode='w')
+    file_handler.setLevel(logging.INFO)
     
-    # 控制台处理器
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     
-    # 列表处理器（收集日志）
     list_handler = ListHandler()
     list_handler.setLevel(logging.INFO)
     
-    # 日志格式
     formatter = logging.Formatter(
         '%(asctime)s [%(name)s] %(levelname)s: %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
@@ -91,19 +85,15 @@ def setup_logging(log_file: str):
     console_handler.setFormatter(formatter)
     list_handler.setFormatter(formatter)
     
-    # 添加所有处理器
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
     root_logger.addHandler(list_handler)
     
-    # ========== 关键修复 2：禁用 Scrapy 的默认日志配置 ==========
-    from scrapy.utils.log import configure_logging
-    configure_logging(install_root_handler=False)  # 禁用 Scrapy 的根处理器
-    
-    # 禁止 Scrapy 日志向上传播（防止重复）
-    logging.getLogger('scrapy').propagate = False
-    logging.getLogger('pixiv').propagate = False
-    logging.getLogger('src').propagate = False
+    # ========== 第 4 步：彻底禁用 Scrapy 各模块的日志传播 ==========
+    for logger_name in ['scrapy', 'pixiv', 'src', 'py.warnings', 'filelock']:
+        module_logger = logging.getLogger(logger_name)
+        module_logger.propagate = False  # 不向上传播
+        module_logger.setLevel(logging.WARNING)  # 只记录警告及以上级别
     
     return list_handler
 

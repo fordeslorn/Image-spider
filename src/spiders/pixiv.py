@@ -67,45 +67,139 @@ class PixivSpider(scrapy.Spider):
         self.logger.info(f"\033[34m[{self.task_id}] ========== PARSE_API CALLED ==========\033[0m")
         self.logger.info(f"\033[34m[{self.task_id}] Response status: {response.status}\033[0m")
         
+        # ========== 添加：打印响应内容（前 500 字符）==========
+        self.logger.debug(f"\033[36m[{self.task_id}] Response preview: {response.text[:500]}...\033[0m")
+        
         try:
             data = json.loads(response.text)
             
             if data.get('error'):
-                self.logger.error(f"\033[31m[{self.task_id}] API error: {data.get('message')}\033[0m")
+                self.logger.error(
+                    f"\033[31m[{self.task_id}] ❌ API error: {data.get('message')}\033[0m"
+                )
                 return
             
             illusts: dict = data.get('body', {}).get('illusts', {})
             self.logger.info(f"\033[34m[{self.task_id}] ✓ Found {len(illusts)} illustrations\033[0m")
             
             if not illusts:
-                self.logger.warning(f"\033[33m[{self.task_id}] No illustrations found for user {self.user_id}\033[0m")
+                self.logger.warning(
+                    f"\033[33m[{self.task_id}] ⚠ No illustrations found. "
+                    f"This might indicate an invalid cookie or private profile.\033[0m"
+                )
                 return
 
             count = 0
             for illust_id in illusts.keys():
                 illust_detail_url = f"https://www.pixiv.net/ajax/illust/{illust_id}"
                 count += 1
-                self.logger.info(f"\033[34m[{self.task_id}] Queuing detail request {count}: {illust_id}\033[0m")
-                yield response.follow(illust_detail_url, callback=self.parse_illust_detail, dont_filter=True)
                 
+                # ========== 只打印前 10 个，避免日志过长 ==========
+                if count <= 10:
+                    self.logger.info(
+                        f"\033[34m[{self.task_id}] Queuing detail request {count}: {illust_id}\033[0m"
+                    )
+                elif count == 11:
+                    self.logger.info(
+                        f"\033[34m[{self.task_id}] ... and {len(illusts) - 10} more\033[0m"
+                    )
+                
+                yield response.follow(
+                    illust_detail_url,
+                    callback=self.parse_illust_detail,
+                    dont_filter=True
+                )
+                    
         except Exception as e:
             self.logger.exception(f"\033[31m[{self.task_id}] ❌ Error in parse_api: {e}\033[0m")
+
     def parse_illust_detail(self, response):
-        self.logger.info(f"\033[34m[{self.task_id}] Parsing illust detail...\033[0m")
-        
+        """解析作品详情"""
         try:
             data = json.loads(response.text)
+            illust_id = response.url.split('/')[-1]
+            
+            # 检查 API 错误
+            if data.get('error'):
+                error_msg = data.get('message', 'Unknown error')
+                self.logger.error(
+                    f"\033[31m[{self.task_id}] ❌ Illust {illust_id} API error: {error_msg}\033[0m"
+                )
+                return
+            
             body = data.get('body', {})
-            original_url = body.get('urls', {}).get('original')
-
-            if original_url:
-                self.logger.info(f"\033[34m[{self.task_id}] ✓ Extracted URL: {original_url}\033[0m")
-                item = PixivItem()
-                item['user_id'] = self.user_id
-                item['user_name'] = body.get('userName', 'N/A')
-                item['image_urls'] = [original_url]
-                yield item
-            else:
-                self.logger.warning(f"\033[33m[{self.task_id}] Missing original_url in response\033[0m")
+            urls = body.get('urls', {})
+            
+            # ========== 关键修复：详细检查每个 URL ==========
+            original_url = urls.get('original', '').strip()  # 去除空白字符
+            
+            # 打印原始值（调试用）
+            self.logger.debug(
+                f"\033[36m[{self.task_id}] Illust {illust_id} original_url raw value: "
+                f"'{original_url}' (type: {type(original_url).__name__}, length: {len(original_url)})\033[0m"
+            )
+            
+            # ========== 如果 original 是空字符串或 None，尝试备用 URL ==========
+            if not original_url:  # 空字符串或 None 都会进入这里
+                available_urls = list(urls.keys()) if urls else []
+                self.logger.warning(
+                    f"\033[33m[{self.task_id}] ⚠ Illust {illust_id} 'original' URL is empty/None. "
+                    f"Available keys: {available_urls}\033[0m"
+                )
+                
+                # ========== 打印所有 URL 的值（调试用）==========
+                for key in available_urls:
+                    value = urls.get(key, '')
+                    self.logger.debug(
+                        f"\033[36m[{self.task_id}]   {key}: '{value}' "
+                        f"(length: {len(str(value))})\033[0m"
+                    )
+                
+                # 尝试备用 URL（按优先级）
+                original_url = (
+                    urls.get('regular', '').strip() or 
+                    urls.get('small', '').strip() or 
+                    urls.get('thumb', '').strip()
+                )
+                
+                if original_url:
+                    self.logger.info(
+                        f"\033[33m[{self.task_id}] ℹ Using fallback URL for {illust_id}: "
+                        f"{original_url[:60]}...\033[0m"
+                    )
+                else:
+                    # ========== 所有 URL 都是空的 ==========
+                    self.logger.error(
+                        f"\033[31m[{self.task_id}] ❌ Illust {illust_id} ALL URLs are empty! "
+                        f"Dumping full response:\033[0m"
+                    )
+                    # 打印完整的响应 JSON（方便分析）
+                    self.logger.debug(f"\033[36m{json.dumps(body, indent=2, ensure_ascii=False)[:1000]}...\033[0m")
+                    return
+            
+            # ========== 成功提取 URL ==========
+            user_name = body.get('userName', 'Unknown')
+            title = body.get('title', 'Untitled')
+            
+            self.logger.info(
+                f"\033[32m[{self.task_id}] ✅ Illust {illust_id} | "
+                f"Title: {title} | Artist: {user_name}\033[0m"
+            )
+            self.logger.info(
+                f"\033[32m[{self.task_id}]    URL: {original_url}\033[0m"
+            )
+            
+            item = PixivItem()
+            item['user_id'] = self.user_id
+            item['user_name'] = user_name
+            item['image_urls'] = [original_url]
+            yield item
+            
+        except json.JSONDecodeError as e:
+            self.logger.error(
+                f"\033[31m[{self.task_id}] ❌ JSON decode error: {e}\033[0m"
+            )
         except Exception as e:
-            self.logger.exception(f"\033[31m[{self.task_id}] ❌ Error in parse_illust_detail: {e}\033[0m")
+            self.logger.exception(
+                f"\033[31m[{self.task_id}] ❌ Unexpected error in parse_illust_detail: {e}\033[0m"
+            )

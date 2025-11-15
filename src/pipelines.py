@@ -165,23 +165,46 @@ class CustomImagesPipeline(ImagesPipeline):
             return item
         
         try:
-            # 只保留成功下载的图片
-            successful_images = [
-                {
-                    'url': x.get('url', ''),
-                    'path': x.get('path', ''),
-                    'checksum': x.get('checksum', '')
-                }
-                for ok, x in results if ok
-            ]
+            # 统计成功和失败
+            successful = []
+            failed = []
             
-            if successful_images:
-                # 为每张图片记录下载信息
-                for img in successful_images:
+            for ok, x in results:
+                if ok:
+                    successful.append({
+                        'url': x.get('url', ''),
+                        'path': x.get('path', ''),
+                        'checksum': x.get('checksum', '')
+                    })
+                else:
+                    # x 是一个 Failure 对象
+                    failed.append(str(x))
+            
+            # ========== 打印详细的下载结果 ==========
+            if successful:
+                for img in successful:
+                    # 保存到文件
                     with open(self.images_file, 'a', encoding='utf-8') as f:
                         f.write(json.dumps(img, ensure_ascii=False) + '\n')
+                    
+                    # 打印成功日志（包含文件名）
+                    filename = img['path'].split('/')[-1]
+                    logger.info(
+                        f"\033[32m[{self.task_id}] ✅ Downloaded: {filename}\033[0m"
+                    )
+            
+            if failed:
+                for error in failed:
+                    logger.warning(
+                        f"\033[33m[{self.task_id}] ⚠ Download failed: {error[:100]}\033[0m"
+                    )
+            
+            # 总结
+            logger.info(
+                f"\033[34m[{self.task_id}] Download summary: "
+                f"{len(successful)} succeeded, {len(failed)} failed\033[0m"
+            )
                 
-                logger.info(f"\033[34m[{self.task_id}] {len(successful_images)} images saved\033[0m")
         except Exception as e:
             logger.error(f"\033[31m[{self.task_id}] Error saving image info: {e}\033[0m")
         
