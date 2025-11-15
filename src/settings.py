@@ -2,7 +2,7 @@ BOT_NAME = "src"
 SPIDER_MODULES = ["src.spiders"]
 NEWSPIDER_MODULE = "src.spiders"
 
-# IMAGES_STORE = "pixiv_images"
+IMAGES_STORE = "pixiv_images"
 
 IMAGES_URLS_FIELD = "image_urls"
 
@@ -57,8 +57,8 @@ HTTPS_PROXY = 'http://127.0.0.1:7890'
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
 ITEM_PIPELINES = {
-#    "src.pipelines.SrcPipeline": 300,
-    # "scrapy.pipelines.images.ImagesPipeline": 1,
+    "src.pipelines.CustomImagesPipeline": 1,
+    "src.pipelines.ApiDataCollectorPipeline": 300,
 }
 
 # Enable and configure the AutoThrottle extension (disabled by default)
