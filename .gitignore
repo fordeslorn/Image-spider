@@ -212,3 +212,4 @@ pixiv.json
 .task_data/
 .task_logs
 test_result.json
+.task_results

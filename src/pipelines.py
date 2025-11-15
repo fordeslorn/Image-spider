@@ -165,7 +165,6 @@ class CustomImagesPipeline(ImagesPipeline):
             return item
         
         try:
-            # 统计成功和失败
             successful = []
             failed = []
             
@@ -174,32 +173,34 @@ class CustomImagesPipeline(ImagesPipeline):
                     successful.append({
                         'url': x.get('url', ''),
                         'path': x.get('path', ''),
-                        'checksum': x.get('checksum', '')
+                        'checksum': x.get('checksum', ''),
+                        'status': 'success'  # ← 新增
                     })
                 else:
-                    # x 是一个 Failure 对象
-                    failed.append(str(x))
+                    # ========== 新增：记录失败的图片 ==========
+                    failed_info = {
+                        'url': x.value.get('url', '') if hasattr(x, 'value') else 'unknown',
+                        'status': 'failed',
+                        'error': str(x.getErrorMessage()) if hasattr(x, 'getErrorMessage') else str(x)
+                    }
+                    failed.append(failed_info)
             
-            # ========== 打印详细的下载结果 ==========
-            if successful:
+            # ========== 保存所有结果（包括失败的）==========
+            with open(self.images_file, 'a', encoding='utf-8') as f:
                 for img in successful:
-                    # 保存到文件
-                    with open(self.images_file, 'a', encoding='utf-8') as f:
-                        f.write(json.dumps(img, ensure_ascii=False) + '\n')
-                    
-                    # 打印成功日志（包含文件名）
+                    f.write(json.dumps(img, ensure_ascii=False) + '\n')
                     filename = img['path'].split('/')[-1]
-                    logger.info(
-                        f"\033[32m[{self.task_id}] ✅ Downloaded: {filename}\033[0m"
-                    )
-            
-            if failed:
-                for error in failed:
+                    logger.info(f"\033[32m[{self.task_id}] ✅ Downloaded: {filename}\033[0m")
+                
+                for img in failed:
+                    f.write(json.dumps(img, ensure_ascii=False) + '\n')  # ← 记录失败
                     logger.warning(
-                        f"\033[33m[{self.task_id}] ⚠ Download failed: {error[:100]}\033[0m"
+                        f"\033[33m[{self.task_id}] ⚠ Download failed: {img['url']}\033[0m"
+                    )
+                    logger.warning(
+                        f"\033[33m[{self.task_id}]   Error: {img['error'][:100]}\033[0m"
                     )
             
-            # 总结
             logger.info(
                 f"\033[34m[{self.task_id}] Download summary: "
                 f"{len(successful)} succeeded, {len(failed)} failed\033[0m"
