@@ -119,7 +119,6 @@ class PixivSpider(scrapy.Spider):
             data = json.loads(response.text)
             illust_id = response.url.split('/')[-1]
             
-            # 检查 API 错误
             if data.get('error'):
                 error_msg = data.get('message', 'Unknown error')
                 self.logger.error(
@@ -128,78 +127,126 @@ class PixivSpider(scrapy.Spider):
                 return
             
             body = data.get('body', {})
-            urls = body.get('urls', {})
             
-            # ========== 关键修复：详细检查每个 URL ==========
-            original_url = urls.get('original', '').strip()  # 去除空白字符
+            # ========== 处理多图作品 ==========
+            page_count = body.get('pageCount', 1)
+            illust_type = body.get('illustType', 0)
             
-            # 打印原始值（调试用）
-            self.logger.debug(
-                f"\033[36m[{self.task_id}] Illust {illust_id} original_url raw value: "
-                f"'{original_url}' (type: {type(original_url).__name__}, length: {len(original_url)})\033[0m"
-            )
+            image_urls = []
             
-            # ========== 如果 original 是空字符串或 None，尝试备用 URL ==========
-            if not original_url:  # 空字符串或 None 都会进入这里
-                available_urls = list(urls.keys()) if urls else []
-                self.logger.warning(
-                    f"\033[33m[{self.task_id}] ⚠ Illust {illust_id} 'original' URL is empty/None. "
-                    f"Available keys: {available_urls}\033[0m"
+            if page_count > 1:
+                # 多图作品：需要获取所有分页的 URL
+                self.logger.info(
+                    f"\033[33m[{self.task_id}] Illust {illust_id} is multi-page ({page_count} pages)\033[0m"
                 )
                 
-                # ========== 打印所有 URL 的值（调试用）==========
-                for key in available_urls:
-                    value = urls.get(key, '')
-                    self.logger.debug(
-                        f"\033[36m[{self.task_id}]   {key}: '{value}' "
-                        f"(length: {len(str(value))})\033[0m"
-                    )
-                
-                # 尝试备用 URL（按优先级）
+                # 请求多图详情 API
+                pages_url = f"https://www.pixiv.net/ajax/illust/{illust_id}/pages"
+                yield response.follow(
+                    pages_url,
+                    callback=self.parse_pages,
+                    cb_kwargs={'illust_id': illust_id, 'body': body},
+                    dont_filter=True
+                )
+                return  # 不继续执行，等待 parse_pages 处理
+            
+            # ========== 单图作品 ==========
+            urls = body.get('urls', {})
+            
+            # ========== 关键修复：处理 None 值 ==========
+            original_url = urls.get('original') or ''  # ← 改这里！
+            original_url = original_url.strip() if original_url else ''
+            
+            # 或者更简洁的写法：
+            # original_url = (urls.get('original') or '').strip()
+            
+            if not original_url:
+                # 尝试备用 URL
                 original_url = (
-                    urls.get('regular', '').strip() or 
-                    urls.get('small', '').strip() or 
-                    urls.get('thumb', '').strip()
+                    (urls.get('regular') or '').strip() or 
+                    (urls.get('small') or '').strip()
                 )
                 
                 if original_url:
                     self.logger.info(
-                        f"\033[33m[{self.task_id}] ℹ Using fallback URL for {illust_id}: "
-                        f"{original_url[:60]}...\033[0m"
+                        f"\033[33m[{self.task_id}] Using fallback URL for {illust_id}\033[0m"
                     )
                 else:
-                    # ========== 所有 URL 都是空的 ==========
                     self.logger.error(
-                        f"\033[31m[{self.task_id}] ❌ Illust {illust_id} ALL URLs are empty! "
-                        f"Dumping full response:\033[0m"
+                        f"\033[31m[{self.task_id}] ❌ Illust {illust_id} has no usable URL\033[0m"
                     )
-                    # 打印完整的响应 JSON（方便分析）
-                    self.logger.debug(f"\033[36m{json.dumps(body, indent=2, ensure_ascii=False)[:1000]}...\033[0m")
                     return
             
-            # ========== 成功提取 URL ==========
+            image_urls = [original_url]
+            
+            # ========== 生成 Item ==========
             user_name = body.get('userName', 'Unknown')
             title = body.get('title', 'Untitled')
             
             self.logger.info(
                 f"\033[32m[{self.task_id}] ✅ Illust {illust_id} | "
-                f"Title: {title} | Artist: {user_name}\033[0m"
-            )
-            self.logger.info(
-                f"\033[32m[{self.task_id}]    URL: {original_url}\033[0m"
+                f"Title: {title} | {len(image_urls)} image(s)\033[0m"
             )
             
             item = PixivItem()
             item['user_id'] = self.user_id
             item['user_name'] = user_name
-            item['image_urls'] = [original_url]
+            item['image_urls'] = image_urls
             yield item
             
-        except json.JSONDecodeError as e:
-            self.logger.error(
-                f"\033[31m[{self.task_id}] ❌ JSON decode error: {e}\033[0m"
-            )
         except Exception as e:
             self.logger.exception(
-                f"\033[31m[{self.task_id}] ❌ Unexpected error in parse_illust_detail: {e}\033[0m"
+                f"\033[31m[{self.task_id}] ❌ Error in parse_illust_detail: {e}\033[0m"
+            )
+
+    def parse_pages(self, response, illust_id, body):
+        """解析多图作品的所有页面"""
+        try:
+            data = json.loads(response.text)
+            
+            if data.get('error'):
+                self.logger.error(
+                    f"\033[31m[{self.task_id}] ❌ Pages API error for {illust_id}\033[0m"
+                )
+                return
+            
+            pages = data.get('body', [])
+            image_urls = []
+            
+            for page in pages:
+                urls = page.get('urls', {})
+                
+                # ========== 同样修复：处理 None 值 ==========
+                original = (urls.get('original') or '').strip()
+                
+                if original:
+                    image_urls.append(original)
+                else:
+                    # 备用 URL
+                    regular = (urls.get('regular') or '').strip()
+                    if regular:
+                        image_urls.append(regular)
+            
+            if image_urls:
+                user_name = body.get('userName', 'Unknown')
+                title = body.get('title', 'Untitled')
+                
+                self.logger.info(
+                    f"\033[32m[{self.task_id}] ✅ Multi-page illust {illust_id} | "
+                    f"Title: {title} | {len(image_urls)} images\033[0m"
+                )
+                
+                item = PixivItem()
+                item['user_id'] = self.user_id
+                item['user_name'] = user_name
+                item['image_urls'] = image_urls
+                yield item
+            else:
+                self.logger.error(
+                    f"\033[31m[{self.task_id}] ❌ No images found in multi-page illust {illust_id}\033[0m"
+                )
+        
+        except Exception as e:
+            self.logger.exception(
+                f"\033[31m[{self.task_id}] ❌ Error parsing pages for {illust_id}: {e}\033[0m"
             )
