@@ -26,7 +26,8 @@ tasks = {}
 
 # --- 请求模型 ---
 class CrawlRequest(BaseModel):
-    user_id: str
+    user_id: str = None           
+    pixiv_user_id: str = None    
     cookie: str
 
 # --- 结果文件存储目录 ---
@@ -105,16 +106,47 @@ async def start_crawl(mode: str, request: CrawlRequest):
     if mode not in ['image', 'data']:
         raise HTTPException(status_code=400, detail="模式必须是 'image' 或 'data'")
     
+    # ========== 参数验证 ==========
+    if not request.pixiv_user_id:
+        raise HTTPException(status_code=400, detail="pixiv_user_id 是必需的")
+    
+    if not request.pixiv_user_id.isdigit():
+        raise HTTPException(
+            status_code=400, 
+            detail=f"pixiv_user_id 必须是数字，收到: {request.pixiv_user_id}"
+        )
+    
+    if not request.cookie or len(request.cookie) < 50:
+        raise HTTPException(status_code=400, detail="Cookie 无效或太短")
+    
+    # ========== 打印调试信息 ==========
+    print(f"\n{'='*60}")
+    print(f"[FastAPI] 收到爬虫请求:")
+    print(f"  登录用户: {request.user_id or '未提供'}")
+    print(f"  目标 Pixiv 用户: {request.pixiv_user_id}")
+    print(f"  模式: {mode}")
+    print(f"  Cookie 长度: {len(request.cookie)}")
+    print(f"{'='*60}\n")
+    
+    # ========== 创建任务 ==========
     task_id = str(uuid.uuid4())
     tasks[task_id] = {
         "status": "running",
         "mode": mode,
+        "user_id": request.user_id,              # 登录用户（可选）
+        "pixiv_user_id": request.pixiv_user_id,  # Pixiv 用户（必需）
         "logs": [],
         "results": [],
         "images": []
     }
     
-    asyncio.create_task(run_spider_task(task_id, request.user_id, request.cookie, mode))
+    # ========== 启动爬虫 ==========
+    asyncio.create_task(run_spider_task(
+        task_id, 
+        request.pixiv_user_id,  # ← 直接用 pixiv_user_id
+        request.cookie, 
+        mode
+    ))
     
     return {"status": "started", "task_id": task_id}
 
